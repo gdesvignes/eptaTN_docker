@@ -92,17 +92,18 @@ RUN apt-get -y install \
     libltdl-dev \
     libltdl7 \
     libmpich-dev \
-    libibumad \
+    libibumad3 \
     libibumad-dev \
-    libibverbs \
+    libibverbs1 \
     libibverbs-dev \
-    libibvers-utils \
+    ibverbs-utils \
+    ibverbs-providers \
     libopenblas-base \
     libopenblas-dev \
     libopenmpi-dev \
-    libpsm2 \
+    libpsm2-2 \
     libpsm2-dev \
-    librdmacm \
+    librdmacm1 \
     librdmacm-dev \
     libreadline-dev \ 
     libquadmath0-ppc64el-cross \
@@ -124,7 +125,6 @@ RUN apt-get -y install \
     mc \
     nano \
     numactl \
-    numact-dev \
     openmpi-bin \
     openmpi-common \
     openssh-server \
@@ -170,10 +170,15 @@ RUN mkdir -p /home/psr/software
 WORKDIR $PSRHOME
 RUN wget --no-check-certificate https://www.imcce.fr/content/medias/recherche/equipes/asd/calceph/calceph-2.3.2.tar.gz && \
     tar -xvvf calceph-2.3.2.tar.gz -C $PSRHOME && \
+    git clone https://github.com/openucx/ucx.git && \
     git clone https://bitbucket.org/psrsoft/tempo2.git && \
     git clone https://github.com/JohannesBuchner/MultiNest  && \
     git clone https://github.com/PolyChord/PolyChordLite.git && \
-   git clone https://github.com/gdesvignes/TempoNest.git
+    git clone https://github.com/gdesvignes/TempoNest.git
+
+# UCX
+WORKDIR $PSRHOME/ucx
+RUN ./autogen.sh && ./contrib/configure-release --prefix=/usr/local && make -j($nproc) && make install
 
 # Slurm PMI2
 ARG SLURM_VERSION=20.11.8
@@ -189,6 +194,7 @@ RUN wget https://download.schedmd.com/slurm/slurm-20.11.8.tar.bz2 \
 #
 # Patch OpenMPI to disable UCX plugin on systems with Intel or Cray HSNs. UCX
 # has inferior performance than PSM2/uGNI but higher priority.
+WORKDIR $PSRHOME
 ARG MPI_VERSION=4.0.5
 RUN wget https://download.open-mpi.org/release/open-mpi/v4.0/openmpi-${MPI_VERSION}.tar.bz2 && tar -xfj openmpi-${MPI_VERSION}.tar.bz2
 COPY dont-init-ucx-on-intel-cray.patch ./openmpi-${MPI_VERSION}
@@ -211,6 +217,7 @@ RUN ldconfig
 # "ssh : rsh", but that's not installed.
 RUN echo 'plm_rsh_agent = false' >> /mnt/0/openmpi-mca-params.conf
 
+WORKDIR $PSRHOME
 # tempo2
 ENV TEMPO2=$PSRHOME"/tempo2/T2runtime" \
     PATH=$PATH:$PSRHOME"/tempo2/T2runtime/bin" \
