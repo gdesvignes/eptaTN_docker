@@ -57,6 +57,8 @@ RUN apt-get -y install \
     emacs\
     exuberant-ctags \
     f2c \
+    file \
+    flex \
     fort77 \
     g++ \
     gawk \
@@ -67,11 +69,13 @@ RUN apt-get -y install \
     gsl-bin \
     htop \
     hwloc \
+    ibacm \
     libatlas-base-dev \
     libblas-dev \
     liblapack-dev \
     libc-dev-bin \
     libc6-dev \
+    libevent-dev \
     libfreetype6 \
     libfreetype6-dev \
     libgd-dev \
@@ -88,15 +92,26 @@ RUN apt-get -y install \
     libltdl-dev \
     libltdl7 \
     libmpich-dev \
+    libibumad \
+    libibumad-dev \
+    libibverbs \
+    libibverbs-dev \
+    libibvers-utils \
     libopenblas-base \
     libopenblas-dev \
     libopenmpi-dev \
+    libpsm2 \
+    libpsm2-dev \
+    librdmacm \
+    librdmacm-dev \
     libreadline-dev \ 
     libquadmath0-ppc64el-cross \
     libsocket++-dev \
     libsocket++1 \
     libssl-dev \
     libtool \
+    libucx-dev \
+    libucx0 \
     llvm-6.0 \
     llvm-6.0-dev \
     llvm-6.0-examples \
@@ -109,6 +124,7 @@ RUN apt-get -y install \
     mc \
     nano \
     numactl \
+    numact-dev \
     openmpi-bin \
     openmpi-common \
     openssh-server \
@@ -118,10 +134,12 @@ RUN apt-get -y install \
     python3-dev \
     python3-pip \
     python3-setuptools \
+    rdma-core \
     screen \
     source-highlight \
     subversion \
     tcsh \
+    ucx-utils \
     vim \
     wget \
     zlib1g-dev \
@@ -157,6 +175,41 @@ RUN wget --no-check-certificate https://www.imcce.fr/content/medias/recherche/eq
     git clone https://github.com/PolyChord/PolyChordLite.git && \
    git clone https://github.com/gdesvignes/TempoNest.git
 
+# Slurm PMI2
+ARG SLURM_VERSION=20.11.8
+RUN wget https://download.schedmd.com/slurm/slurm-20.11.8.tar.bz2 \
+ && tar -xfj slurm-${SLURM_VERSION}.tar.bz2 \
+ && cd slurm-${SLURM_VERSION} \
+ && ./configure --prefix=/usr/local \
+ && cd contribs/pmi2 \
+ && make -j$(nproc) install \
+ && rm -Rf ../../../slurm*
+
+# OpenMPI.
+#
+# Patch OpenMPI to disable UCX plugin on systems with Intel or Cray HSNs. UCX
+# has inferior performance than PSM2/uGNI but higher priority.
+ARG MPI_VERSION=4.0.5
+RUN wget https://download.open-mpi.org/release/open-mpi/v4.0/openmpi-${MPI_VERSION}.tar.bz2 && tar -xfj openmpi-${MPI_VERSION}.tar.bz2
+COPY dont-init-ucx-on-intel-cray.patch ./openmpi-${MPI_VERSION}
+RUN cd openmpi-${MPI_VERSION} && git apply dont-init-ucx-on-intel-cray.patch \
+ && CFLAGS=-O3 \
+    CXXFLAGS=-O3 \
+    ./configure --prefix=/usr/local \
+                --sysconfdir=/mnt/0 \
+                --with-slurm \
+                --with-pmi=/usr/local \
+                --with-pmix \
+                --with-ucx \
+                --disable-pty-support \
+                --enable-mca-no-build=btl-openib,plm-slurm \
+ && make -j$(nproc) install \
+ && rm -Rf ../openmpi-${MPI_VERSION}*
+RUN ldconfig		  
+
+# OpenMPI expects this program to exist, even if it's not used. Default is
+# "ssh : rsh", but that's not installed.
+RUN echo 'plm_rsh_agent = false' >> /mnt/0/openmpi-mca-params.conf
 
 # tempo2
 ENV TEMPO2=$PSRHOME"/tempo2/T2runtime" \
@@ -197,6 +250,7 @@ ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:"$PSRHOME/MultiNest/lib":"/usr/lib/x86_64-l
 
 WORKDIR $PSRHOME/TempoNest
 RUN git checkout --track origin/newPC && sh ./autogen.sh && ./configure --prefix=$PSRHOME/TempoNest CC=mpicc CXX=mpicxx F77=mpifort FC=mpifort CXXFLAGS=-std=c++14 LDFLAGS=-L$PC_DIR && make temponest && make temponest-install
+
 
 
 USER psr
